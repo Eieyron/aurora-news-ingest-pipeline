@@ -1,0 +1,37 @@
+services:
+  localstack:
+    image: localstack/localstack
+    ports:
+      - "4566:4566"
+    environment:
+      - SERVICES=kinesis
+      - DEFAULT_REGION=ap-southeast-1
+    healthcheck:
+      test: ["CMD", "awslocal", "kinesis", "list-streams"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  create-stream:
+    image: amazon/aws-cli
+    depends_on:
+      localstack:
+        condition: service_healthy
+    environment:
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=ap-southeast-1
+    entrypoint: >
+      aws --endpoint-url=http://localstack:4566
+      kinesis create-stream
+      --stream-name aurora-news-stream
+      --shard-count 1
+
+  ingest:
+    build: .
+    depends_on:
+      create-stream:
+        condition: service_completed_successfully
+    env_file: .env
+    environment:
+      - AWS_ENDPOINT_URL=http://localstack:4566
