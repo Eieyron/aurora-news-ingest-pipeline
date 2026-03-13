@@ -131,17 +131,23 @@ class TestKinesisIntegration:
 
         time.sleep(1)
 
-        response = kinesis_client.get_records(ShardIterator=iterator, Limit=10)
+        response = kinesis_client.get_records(ShardIterator=iterator, Limit=100)
         records = response["Records"]
 
         assert len(records) >= 1
 
-        data = json.loads(records[-1]["Data"])
-        assert data["title"] == "Integration Test Article"
-        assert data["source_name"] == "IntegrationTest"
-        assert data["author"] == "Test Author"
-        assert "article_id" in data
-        assert "ingested_at" in data
+        found = False
+        for record in records:
+            data = json.loads(record["Data"])
+            if data.get("title") == "Integration Test Article":
+                assert data["source_name"] == "IntegrationTest"
+                assert data["author"] == "Test Author"
+                assert "article_id" in data
+                assert "ingested_at" in data
+                found = True
+                break
+
+        assert found, "Integration Test Article not found in Kinesis records"
 
 
 @skip_no_newsapi
