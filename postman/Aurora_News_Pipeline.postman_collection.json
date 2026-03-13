@@ -1,0 +1,701 @@
+{
+  "info": {
+    "name": "Aurora News Ingest Pipeline",
+    "description": "Collection for testing the Aurora Analytics News Ingest Pipeline.\n\nCovers NewsAPI (fetch articles), LocalStack Kinesis (stream management & records), and the full pipeline flow.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "newsapi_key",
+      "value": "62bbfcccfcae452caef313c2c7161986",
+      "type": "string"
+    },
+    {
+      "key": "newsapi_base_url",
+      "value": "https://newsapi.org/v2",
+      "type": "string"
+    },
+    {
+      "key": "kinesis_url",
+      "value": "http://localhost:4566",
+      "type": "string"
+    },
+    {
+      "key": "aws_region",
+      "value": "ap-southeast-1",
+      "type": "string"
+    },
+    {
+      "key": "stream_name",
+      "value": "aurora-news-stream",
+      "type": "string"
+    },
+    {
+      "key": "shard_iterator",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "NewsAPI",
+      "description": "Requests to the NewsAPI.org external API.",
+      "item": [
+        {
+          "name": "1. Fetch Articles (Everything)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('API status is ok', function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data.status).to.eql('ok');",
+                  "});",
+                  "",
+                  "pm.test('Articles array is not empty', function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data.articles).to.be.an('array').that.is.not.empty;",
+                  "});",
+                  "",
+                  "pm.test('Articles have required fields', function () {",
+                  "    var article = pm.response.json().articles[0];",
+                  "    pm.expect(article).to.have.property('source');",
+                  "    pm.expect(article).to.have.property('author');",
+                  "    pm.expect(article).to.have.property('title');",
+                  "    pm.expect(article).to.have.property('content');",
+                  "    pm.expect(article).to.have.property('url');",
+                  "    pm.expect(article).to.have.property('publishedAt');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Api-Key",
+                "value": "{{newsapi_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{newsapi_base_url}}/everything?q=technology&pageSize=10&sortBy=publishedAt",
+              "host": ["{{newsapi_base_url}}"],
+              "path": ["everything"],
+              "query": [
+                { "key": "q", "value": "technology" },
+                { "key": "pageSize", "value": "10" },
+                { "key": "sortBy", "value": "publishedAt" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "2. Fetch Articles (Custom Query)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Api-Key",
+                "value": "{{newsapi_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{newsapi_base_url}}/everything?q=artificial intelligence&pageSize=5&sortBy=publishedAt&language=en",
+              "host": ["{{newsapi_base_url}}"],
+              "path": ["everything"],
+              "query": [
+                { "key": "q", "value": "artificial intelligence" },
+                { "key": "pageSize", "value": "5" },
+                { "key": "sortBy", "value": "publishedAt" },
+                { "key": "language", "value": "en" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "3. Fetch Top Headlines",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Api-Key",
+                "value": "{{newsapi_key}}"
+              }
+            ],
+            "url": {
+              "raw": "{{newsapi_base_url}}/top-headlines?country=us&pageSize=5",
+              "host": ["{{newsapi_base_url}}"],
+              "path": ["top-headlines"],
+              "query": [
+                { "key": "country", "value": "us" },
+                { "key": "pageSize", "value": "5" }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Kinesis — Stream Management",
+      "description": "Manage the Kinesis stream on LocalStack.",
+      "item": [
+        {
+          "name": "1. List Streams",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Stream list returned', function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data).to.have.property('StreamNames');",
+                  "    pm.expect(data.StreamNames).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-amz-json-1.1" },
+              { "key": "X-Amz-Target", "value": "Kinesis_20131202.ListStreams" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}"
+            },
+            "url": {
+              "raw": "{{kinesis_url}}",
+              "host": ["{{kinesis_url}}"]
+            }
+          }
+        },
+        {
+          "name": "2. Describe Stream",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Stream is ACTIVE', function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data.StreamDescription.StreamStatus).to.eql('ACTIVE');",
+                  "});",
+                  "",
+                  "// Save shard ID for later use",
+                  "var data = pm.response.json();",
+                  "if (data.StreamDescription && data.StreamDescription.Shards && data.StreamDescription.Shards.length > 0) {",
+                  "    pm.collectionVariables.set('shard_id', data.StreamDescription.Shards[0].ShardId);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-amz-json-1.1" },
+              { "key": "X-Amz-Target", "value": "Kinesis_20131202.DescribeStream" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"StreamName\": \"{{stream_name}}\"\n}"
+            },
+            "url": {
+              "raw": "{{kinesis_url}}",
+              "host": ["{{kinesis_url}}"]
+            }
+          }
+        },
+        {
+          "name": "3. Create Stream",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-amz-json-1.1" },
+              { "key": "X-Amz-Target", "value": "Kinesis_20131202.CreateStream" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"StreamName\": \"{{stream_name}}\",\n  \"ShardCount\": 1\n}"
+            },
+            "url": {
+              "raw": "{{kinesis_url}}",
+              "host": ["{{kinesis_url}}"]
+            }
+          }
+        },
+        {
+          "name": "4. Delete Stream",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-amz-json-1.1" },
+              { "key": "X-Amz-Target", "value": "Kinesis_20131202.DeleteStream" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"StreamName\": \"{{stream_name}}\"\n}"
+            },
+            "url": {
+              "raw": "{{kinesis_url}}",
+              "host": ["{{kinesis_url}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Kinesis — Records",
+      "description": "Put and get records from the Kinesis stream. Run in order: Describe Stream → Get Shard Iterator → Get Records.",
+      "item": [
+        {
+          "name": "1. Put Record (Single)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Record has SequenceNumber', function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data).to.have.property('SequenceNumber');",
+                  "    pm.expect(data).to.have.property('ShardId');",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Base64 encode a sample article record",
+                  "var article = {",
+                  "    article_id: 'postman-test-001',",
+                  "    source_name: 'Postman Test',",
+                  "    title: 'Test Article from Postman',",
+                  "    content: 'This is a test article sent directly from Postman.',",
+                  "    url: 'https://postman-test.example.com/1',",
+                  "    author: 'Postman User',",
+                  "    published_at: new Date().toISOString(),",
+                  "    ingested_at: new Date().toISOString()",
+                  "};",
+                  "",
+                  "var encoded = btoa(JSON.stringify(article));",
+                  "pm.collectionVariables.set('encoded_record', encoded);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-amz-json-1.1" },
+              { "key": "X-Amz-Target", "value": "Kinesis_20131202.PutRecord" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"StreamName\": \"{{stream_name}}\",\n  \"Data\": \"{{encoded_record}}\",\n  \"PartitionKey\": \"postman-test-001\"\n}"
+            },
+            "url": {
+              "raw": "{{kinesis_url}}",
+              "host": ["{{kinesis_url}}"]
+            }
+          }
+        },
+        {
+          "name": "2. Put Records (Batch)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var records = [];",
+                  "for (var i = 1; i <= 3; i++) {",
+                  "    var article = {",
+                  "        article_id: 'postman-batch-' + i,",
+                  "        source_name: 'Postman Batch Test',",
+                  "        title: 'Batch Article ' + i,",
+                  "        content: 'Batch test content ' + i,",
+                  "        url: 'https://postman-test.example.com/batch/' + i,",
+                  "        author: 'Postman User',",
+                  "        published_at: new Date().toISOString(),",
+                  "        ingested_at: new Date().toISOString()",
+                  "    };",
+                  "    records.push({",
+                  "        Data: btoa(JSON.stringify(article)),",
+                  "        PartitionKey: 'postman-batch-' + i",
+                  "    });",
+                  "}",
+                  "pm.collectionVariables.set('batch_records', JSON.stringify(records));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('No failed records', function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data.FailedRecordCount).to.eql(0);",
+                  "});",
+                  "",
+                  "pm.test('All 3 records succeeded', function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data.Records).to.have.lengthOf(3);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-amz-json-1.1" },
+              { "key": "X-Amz-Target", "value": "Kinesis_20131202.PutRecords" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"StreamName\": \"{{stream_name}}\",\n  \"Records\": {{batch_records}}\n}"
+            },
+            "url": {
+              "raw": "{{kinesis_url}}",
+              "host": ["{{kinesis_url}}"]
+            }
+          }
+        },
+        {
+          "name": "3. Get Shard Iterator",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Shard iterator returned', function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data).to.have.property('ShardIterator');",
+                  "});",
+                  "",
+                  "// Save iterator for Get Records",
+                  "var data = pm.response.json();",
+                  "pm.collectionVariables.set('shard_iterator', data.ShardIterator);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-amz-json-1.1" },
+              { "key": "X-Amz-Target", "value": "Kinesis_20131202.GetShardIterator" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"StreamName\": \"{{stream_name}}\",\n  \"ShardId\": \"{{shard_id}}\",\n  \"ShardIteratorType\": \"TRIM_HORIZON\"\n}"
+            },
+            "url": {
+              "raw": "{{kinesis_url}}",
+              "host": ["{{kinesis_url}}"]
+            }
+          }
+        },
+        {
+          "name": "4. Get Records",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Records returned', function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data.Records).to.be.an('array').that.is.not.empty;",
+                  "});",
+                  "",
+                  "pm.test('Records have valid article schema', function () {",
+                  "    var data = pm.response.json();",
+                  "    if (data.Records.length > 0) {",
+                  "        var record = JSON.parse(atob(data.Records[0].Data));",
+                  "        pm.expect(record).to.have.property('article_id');",
+                  "        pm.expect(record).to.have.property('source_name');",
+                  "        pm.expect(record).to.have.property('title');",
+                  "        pm.expect(record).to.have.property('content');",
+                  "        pm.expect(record).to.have.property('url');",
+                  "        pm.expect(record).to.have.property('author');",
+                  "        pm.expect(record).to.have.property('published_at');",
+                  "        pm.expect(record).to.have.property('ingested_at');",
+                  "    }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-amz-json-1.1" },
+              { "key": "X-Amz-Target", "value": "Kinesis_20131202.GetRecords" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ShardIterator\": \"{{shard_iterator}}\",\n  \"Limit\": 25\n}"
+            },
+            "url": {
+              "raw": "{{kinesis_url}}",
+              "host": ["{{kinesis_url}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "End-to-End Flow",
+      "description": "Run these in order to simulate the full pipeline manually via Postman.",
+      "item": [
+        {
+          "name": "Step 1 — Fetch from NewsAPI",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "var data = pm.response.json();",
+                  "var articles = data.articles || [];",
+                  "",
+                  "pm.test('Got articles', function () {",
+                  "    pm.expect(articles).to.be.an('array').that.is.not.empty;",
+                  "});",
+                  "",
+                  "// Transform first article into pipeline format and save for next step",
+                  "if (articles.length > 0) {",
+                  "    var a = articles[0];",
+                  "    var processed = {",
+                  "        article_id: require('crypto-js').SHA256(a.url || '').toString().substring(0, 16),",
+                  "        source_name: (a.source || {}).name || 'Unknown',",
+                  "        title: a.title || 'Untitled',",
+                  "        content: (a.content || '').replace(/\\s*\\[\\+\\d+ chars\\]$/, ''),",
+                  "        url: a.url || '',",
+                  "        author: a.author || 'Unknown',",
+                  "        published_at: a.publishedAt || '',",
+                  "        ingested_at: new Date().toISOString()",
+                  "    };",
+                  "    pm.collectionVariables.set('processed_article', JSON.stringify(processed));",
+                  "    pm.collectionVariables.set('encoded_pipeline_record', btoa(JSON.stringify(processed)));",
+                  "    pm.collectionVariables.set('pipeline_partition_key', processed.article_id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              { "key": "X-Api-Key", "value": "{{newsapi_key}}" }
+            ],
+            "url": {
+              "raw": "{{newsapi_base_url}}/everything?q=technology&pageSize=1&sortBy=publishedAt&language=en",
+              "host": ["{{newsapi_base_url}}"],
+              "path": ["everything"],
+              "query": [
+                { "key": "q", "value": "technology" },
+                { "key": "pageSize", "value": "1" },
+                { "key": "sortBy", "value": "publishedAt" },
+                { "key": "language", "value": "en" }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Step 2 — Write to Kinesis",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Record written successfully', function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data).to.have.property('SequenceNumber');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-amz-json-1.1" },
+              { "key": "X-Amz-Target", "value": "Kinesis_20131202.PutRecord" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"StreamName\": \"{{stream_name}}\",\n  \"Data\": \"{{encoded_pipeline_record}}\",\n  \"PartitionKey\": \"{{pipeline_partition_key}}\"\n}"
+            },
+            "url": {
+              "raw": "{{kinesis_url}}",
+              "host": ["{{kinesis_url}}"]
+            }
+          }
+        },
+        {
+          "name": "Step 3 — Get Shard Iterator (Latest)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var data = pm.response.json();",
+                  "pm.collectionVariables.set('shard_iterator', data.ShardIterator);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-amz-json-1.1" },
+              { "key": "X-Amz-Target", "value": "Kinesis_20131202.GetShardIterator" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"StreamName\": \"{{stream_name}}\",\n  \"ShardId\": \"{{shard_id}}\",\n  \"ShardIteratorType\": \"TRIM_HORIZON\"\n}"
+            },
+            "url": {
+              "raw": "{{kinesis_url}}",
+              "host": ["{{kinesis_url}}"]
+            }
+          }
+        },
+        {
+          "name": "Step 4 — Read Back & Verify",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status is 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Records contain pipeline article', function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data.Records).to.be.an('array').that.is.not.empty;",
+                  "",
+                  "    var found = false;",
+                  "    data.Records.forEach(function(rec) {",
+                  "        var decoded = JSON.parse(atob(rec.Data));",
+                  "        if (decoded.article_id && decoded.source_name && decoded.title &&",
+                  "            decoded.url && decoded.author && decoded.published_at && decoded.ingested_at) {",
+                  "            found = true;",
+                  "        }",
+                  "    });",
+                  "    pm.expect(found).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/x-amz-json-1.1" },
+              { "key": "X-Amz-Target", "value": "Kinesis_20131202.GetRecords" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ShardIterator\": \"{{shard_iterator}}\",\n  \"Limit\": 50\n}"
+            },
+            "url": {
+              "raw": "{{kinesis_url}}",
+              "host": ["{{kinesis_url}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health Checks",
+      "description": "Quick health checks for LocalStack.",
+      "item": [
+        {
+          "name": "LocalStack Health",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('LocalStack is healthy', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Kinesis service is available', function () {",
+                  "    var data = pm.response.json();",
+                  "    pm.expect(data.services.kinesis).to.eql('available');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{kinesis_url}}/_localstack/health",
+              "host": ["{{kinesis_url}}"],
+              "path": ["_localstack", "health"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
