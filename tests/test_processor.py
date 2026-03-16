@@ -1,5 +1,3 @@
-import pytest
-
 from app.processor import Article, process_articles, _generate_article_id
 
 

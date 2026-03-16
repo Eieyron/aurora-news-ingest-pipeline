@@ -1,7 +1,9 @@
+import json
 import logging
 import signal
 import sys
 import time
+from types import FrameType
 
 from app.config import Config
 from app.kinesis_writer import KinesisWriter
@@ -13,20 +15,32 @@ logger = logging.getLogger(__name__)
 _running = True
 
 
-def _shutdown_handler(signum: int, _frame) -> None:
+def _shutdown_handler(signum: int, _frame: FrameType | None) -> None:
     global _running
     sig_name = signal.Signals(signum).name
     logger.info("Received %s — shutting down gracefully…", sig_name)
     _running = False
 
 
+class _JsonFormatter(logging.Formatter):
+    """Emits each log record as a single-line JSON object."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        entry = {
+            "timestamp": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info and record.exc_info[0] is not None:
+            entry["exception"] = self.formatException(record.exc_info)
+        return json.dumps(entry, default=str)
+
+
 def _setup_logging() -> None:
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        datefmt="%Y-%m-%dT%H:%M:%S",
-        handlers=[logging.StreamHandler(sys.stdout)],
-    )
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(_JsonFormatter())
+    logging.basicConfig(level=logging.INFO, handlers=[handler])
 
 
 def run() -> None:
