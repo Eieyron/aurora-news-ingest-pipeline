@@ -513,7 +513,7 @@
                   "if (articles.length > 0) {",
                   "    var a = articles[0];",
                   "    var processed = {",
-                  "        article_id: require('crypto-js').SHA256(a.url || '').toString().substring(0, 16),",
+                  "        article_id: CryptoJS.SHA256(a.url || '').toString().substring(0, 16),",
                   "        source_name: (a.source || {}).name || 'Unknown',",
                   "        title: a.title || 'Untitled',",
                   "        content: (a.content || '').replace(/\\s*\\[\\+\\d+ chars\\]$/, ''),",
